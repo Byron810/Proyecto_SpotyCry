@@ -1,75 +1,79 @@
-use std::io::{Read, Write};
+// SpotiCry - Servidor de música | Lenguajes de Programación
+// Punto de entrada: inicia el servidor TCP y crea un hilo por cliente.
+
+mod handlers;
+mod models;
+mod playlist;
+mod protocol;
+
+use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
-/// Maneja la conexión de un cliente individual
-fn handle_client(mut stream: TcpStream) {
-    // Mostrar información del cliente conectado
-    println!("✅ Nuevo cliente conectado desde: {}", stream.peer_addr().unwrap());
+use models::AppState;
+use protocol::{Command, Response};
 
-    // Buffer para almacenar los datos recibidos
-    let mut buffer = [0; 1024];
+/// Atiende la conexión de un cliente en su propio hilo.
+/// Protocolo: cada mensaje es una línea JSON terminada en '\n'.
+fn handle_client(stream: TcpStream, state: Arc<Mutex<AppState>>) {
+    let addr = stream.peer_addr().unwrap();
+    println!("✅ Nuevo cliente conectado: {}", addr);
 
-    loop {
-        // Leer datos del cliente
-        match stream.read(&mut buffer) {
-            Ok(size) => {
-                if size == 0 {
-                    // Si size es 0, el cliente cerró la conexión
-                    println!("❌ Cliente desconectado");
+    // BufReader permite leer línea por línea en lugar de byte a byte
+    let reader = BufReader::new(stream.try_clone().unwrap());
+    let mut writer = stream;
+
+    for line in reader.lines() {
+        match line {
+            Ok(raw) if raw.trim().is_empty() => continue,
+            Ok(raw) => {
+                println!("📨 [{}] Recibido: {}", addr, raw);
+
+                // Parsear JSON → Command; responder con error si el formato es inválido
+                let response = match serde_json::from_str::<Command>(&raw) {
+                    Ok(cmd)  => handlers::route_command(&state, cmd),
+                    Err(err) => Response::error(&format!("JSON inválido: {}", err)),
+                };
+
+                // Serializar y enviar la respuesta terminada en '\n' (delimitador de mensajes)
+                let mut json_out = serde_json::to_string(&response).unwrap();
+                json_out.push('\n');
+
+                if let Err(e) = writer.write_all(json_out.as_bytes()) {
+                    println!("❌ [{}] Error enviando respuesta: {}", addr, e);
                     break;
                 }
 
-                // Convertir bytes recibidos a String
-                let received = String::from_utf8_lossy(&buffer[..size]);
-                println!("📨 Mensaje recibido: {}", received);
-
-                // Preparar respuesta
-                let response = format!("Servidor recibió: '{}'", received.trim());
-
-                // Enviar respuesta al cliente
-                if let Err(e) = stream.write(response.as_bytes()) {
-                    println!("❌ Error enviando respuesta: {}", e);
-                    break;
-                }
-
-                // Forzar el envío inmediato
-                if let Err(e) = stream.flush() {
-                    println!("❌ Error haciendo flush: {}", e);
-                    break;
-                }
-
-                println!("📤 Respuesta enviada: {}", response);
+                println!("📤 [{}] Respuesta: {}", addr, json_out.trim());
             }
-            Err(e) => {
-                println!("❌ Error leyendo del socket: {}", e);
-                break;
-            }
+            Err(_) => break, // error de lectura = cliente desconectado
         }
     }
+
+    println!("❌ Cliente desconectado: {}", addr);
 }
 
 fn main() {
-    // Dirección y puerto donde escuchará el servidor
     let address = "127.0.0.1:7878";
 
-    // Crear el listener TCP
+    // Arc<Mutex<T>>: Arc comparte el puntero entre hilos sin copiar datos;
+    // Mutex garantiza que solo un hilo modifica el estado a la vez.
+    let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::new()));
+
     let listener = TcpListener::bind(address).expect("❌ No se pudo iniciar el servidor");
     println!("🚀 Servidor SpotiCry escuchando en {}", address);
     println!("📝 Esperando conexiones...\n");
 
-    // Aceptar conexiones entrantes en un loop infinito
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                // Por cada cliente, crear un nuevo hilo
-                thread::spawn(|| {
-                    handle_client(stream);
+                let state_clone = Arc::clone(&state); // clonar el puntero, no los datos
+                thread::spawn(move || {
+                    handle_client(stream, state_clone);
                 });
             }
-            Err(e) => {
-                println!("❌ Error aceptando conexión: {}", e);
-            }
+            Err(e) => println!("❌ Error aceptando conexión: {}", e),
         }
     }
 }
