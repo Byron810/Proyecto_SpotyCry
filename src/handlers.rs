@@ -210,6 +210,105 @@ pub fn cmd_get_playlist(state: &AppState, payload: &Value) -> Response {
     }))
 }
 
+// ─── STREAMING DE AUDIO ───────────────────────────────────────
+
+use crate::streaming;
+
+/// Inicia la reproducción de una canción.
+/// Retorna información del archivo y el primer chunk de audio.
+/// Payload: { song_id }
+pub fn cmd_play(state: &mut AppState, payload: &Value) -> Response {
+    let song_id = match payload["song_id"].as_u64() {
+        Some(v) => v as u32,
+        None => return Response::error("Se requiere 'song_id'"),
+    };
+
+    let song = match state.songs.iter().find(|s| s.id == song_id) {
+        Some(s) => s.clone(),
+        None => return Response::error("Canción no encontrada"),
+    };
+
+    if !streaming::is_supported_audio(&song.file_path) {
+        return Response::error("Formato de audio no soportado");
+    }
+
+    let file_size = match streaming::get_file_size(&song.file_path) {
+        Ok(sz) => sz,
+        Err(e) => return Response::error(&e),
+    };
+
+    let chunk = match streaming::read_audio_chunk(&song.file_path, 0, 8192) {
+        Ok(c) => c,
+        Err(e) => return Response::error(&e),
+    };
+
+    if !state.playing_song_ids.contains(&song_id) {
+        state.playing_song_ids.push(song_id);
+    }
+
+    println!("▶️  Reproduciendo: {} ({} bytes totales)", song.name, file_size);
+
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    let chunk_b64 = BASE64.encode(&chunk);
+
+    Response::ok(serde_json::json!({
+        "song": song,
+        "file_size": file_size,
+        "chunk": chunk_b64,
+        "chunk_size": chunk.len(),
+        "offset": 0,
+        "eof": chunk.len() == 0
+    }))
+}
+
+/// Obtiene un chunk de audio desde una posición específica (para seeking).
+/// Payload: { song_id, offset }
+pub fn cmd_seek(state: &AppState, payload: &Value) -> Response {
+    let song_id = match payload["song_id"].as_u64() {
+        Some(v) => v as u32,
+        None => return Response::error("Se requiere 'song_id'"),
+    };
+
+    let offset = match payload["offset"].as_u64() {
+        Some(v) => v,
+        None => return Response::error("Se requiere 'offset'"),
+    };
+
+    let song = match state.songs.iter().find(|s| s.id == song_id) {
+        Some(s) => s,
+        None => return Response::error("Canción no encontrada"),
+    };
+
+    let chunk = match streaming::read_audio_chunk(&song.file_path, offset, 8192) {
+        Ok(c) => c,
+        Err(e) => return Response::error(&e),
+    };
+
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    let chunk_b64 = BASE64.encode(&chunk);
+
+    Response::ok(serde_json::json!({
+        "chunk": chunk_b64,
+        "chunk_size": chunk.len(),
+        "offset": offset,
+        "eof": chunk.len() == 0
+    }))
+}
+
+/// Detiene la reproducción de una canción.
+/// Payload: { song_id }
+pub fn cmd_stop(state: &mut AppState, payload: &Value) -> Response {
+    let song_id = match payload["song_id"].as_u64() {
+        Some(v) => v as u32,
+        None => return Response::error("Se requiere 'song_id'"),
+    };
+
+    state.playing_song_ids.retain(|&id| id != song_id);
+
+    println!("⏹️  Reproducción detenida: id={}", song_id);
+    Response::ok_msg(&format!("Canción {} detenida", song_id))
+}
+
 // ─── ROUTING ─────────────────────────────────────────────────
 
 /// Despacha un comando al handler correspondiente.
@@ -249,6 +348,18 @@ pub fn route_command(state: &Arc<Mutex<AppState>>, command: Command) -> Response
         "GET_PLAYLIST" => {
             let s = state.lock().unwrap();
             cmd_get_playlist(&s, &command.payload)
+        }
+        "PLAY" => {
+            let mut s = state.lock().unwrap();
+            cmd_play(&mut s, &command.payload)
+        }
+        "SEEK" => {
+            let s = state.lock().unwrap();
+            cmd_seek(&s, &command.payload)
+        }
+        "STOP" => {
+            let mut s = state.lock().unwrap();
+            cmd_stop(&mut s, &command.payload)
         }
 
         unknown => {
