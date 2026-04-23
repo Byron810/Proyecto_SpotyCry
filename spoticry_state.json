@@ -1,0 +1,25 @@
+{
+  "songs": [
+    {
+      "id": 1,
+      "name": "El_Lokeron",
+      "artist": "Desconocido",
+      "album": "Desconocido",
+      "genre": "Desconocido",
+      "file_path": "music/El_Lokeron.mp3",
+      "duration_secs": 0
+    },
+    {
+      "id": 2,
+      "name": "Tipitapa",
+      "artist": "Desconocido",
+      "album": "Desconocido",
+      "genre": "Desconocido",
+      "file_path": "music/Tipitapa.mp3",
+      "duration_secs": 0
+    }
+  ],
+  "playlists": [],
+  "next_song_id": 3,
+  "next_playlist_id": 1
+}

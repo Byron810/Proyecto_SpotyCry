@@ -26,13 +26,14 @@ pub struct Playlist {
 
 /// Estado global compartido entre todos los hilos del servidor.
 /// Se envuelve en Arc<Mutex<T>> en main para acceso concurrente seguro.
-#[derive(Debug)]
+/// `playing_song_ids` es estado de runtime y no se persiste.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     pub songs: Vec<Song>,
     pub playlists: Vec<Playlist>,
     pub next_song_id: u32,
     pub next_playlist_id: u32,
-    /// IDs de canciones en reproducción activa; no se pueden eliminar.
+    #[serde(skip)]
     pub playing_song_ids: Vec<u32>,
 }
 

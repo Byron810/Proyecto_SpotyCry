@@ -3,6 +3,7 @@
 
 mod handlers;
 mod models;
+mod persistence;
 mod playlist;
 mod protocol;
 mod streaming;
@@ -136,7 +137,7 @@ fn admin_console(state: Arc<Mutex<AppState>>) {
                 let response = handlers::route_command(&state, cmd);
 
                 if response.status == "ok" {
-                    println!("✅ Canción agregada correctamente");
+                    println!("✅ Canción agregada y guardada");
                 } else {
                     println!("❌ Error: {}", response.message.unwrap_or_default());
                 }
@@ -169,7 +170,7 @@ fn admin_console(state: Arc<Mutex<AppState>>) {
 // ========== MAIN ==========
 fn main() {
     let address = "127.0.0.1:7878";
-    let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::new()));
+    let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(persistence::load_state()));
     let listener = TcpListener::bind(address).expect("❌ No se pudo iniciar el servidor");
 
     println!("🚀 Servidor SpotiCry escuchando en {}", address);

@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 
 use crate::models::{AppState, Playlist, Song};
+use crate::persistence;
 use crate::playlist::{playlist_filter, playlist_sort_by_field, playlist_total_duration};
 use crate::protocol::{Command, Response};
 
@@ -319,11 +320,15 @@ pub fn route_command(state: &Arc<Mutex<AppState>>, command: Command) -> Response
 
         "ADD_SONG" => {
             let mut s = state.lock().unwrap();
-            cmd_add_song(&mut s, &command.payload)
+            let r = cmd_add_song(&mut s, &command.payload);
+            if r.status == "ok" { persistence::save_state(&s); }
+            r
         }
         "DELETE_SONG" => {
             let mut s = state.lock().unwrap();
-            cmd_delete_song(&mut s, &command.payload)
+            let r = cmd_delete_song(&mut s, &command.payload);
+            if r.status == "ok" { persistence::save_state(&s); }
+            r
         }
         "LIST_SONGS" => {
             let s = state.lock().unwrap();
@@ -335,15 +340,21 @@ pub fn route_command(state: &Arc<Mutex<AppState>>, command: Command) -> Response
         }
         "CREATE_PLAYLIST" => {
             let mut s = state.lock().unwrap();
-            cmd_create_playlist(&mut s, &command.payload)
+            let r = cmd_create_playlist(&mut s, &command.payload);
+            if r.status == "ok" { persistence::save_state(&s); }
+            r
         }
         "ADD_TO_PLAYLIST" => {
             let mut s = state.lock().unwrap();
-            cmd_add_to_playlist(&mut s, &command.payload)
+            let r = cmd_add_to_playlist(&mut s, &command.payload);
+            if r.status == "ok" { persistence::save_state(&s); }
+            r
         }
         "REMOVE_FROM_PLAYLIST" => {
             let mut s = state.lock().unwrap();
-            cmd_remove_from_playlist(&mut s, &command.payload)
+            let r = cmd_remove_from_playlist(&mut s, &command.payload);
+            if r.status == "ok" { persistence::save_state(&s); }
+            r
         }
         "GET_PLAYLIST" => {
             let s = state.lock().unwrap();
