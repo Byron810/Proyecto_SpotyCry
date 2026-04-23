@@ -1,47 +1,56 @@
 """
 Barra de búsqueda con 3 criterios: nombre, artista y género.
-Expone callbacks `on_search` y `on_clear` para que la ventana principal reaccione.
 """
 
 import tkinter as tk
 
-from ui.styles import ACCENT, HIGHLIGHT, FG, FG_DIM, make_button, make_entry
+from ui.styles import (BG3, BORDER, ACCENT, HIGHLIGHT, HIGHLIGHT2,
+                        FG, FG_DIM, make_button, make_bordered_entry,
+                        make_separator)
 
 
 class SearchBar(tk.Frame):
     """Panel de búsqueda con campos nombre / artista / género."""
 
     def __init__(self, parent, on_search, on_clear, **kw):
-        super().__init__(parent, bg=ACCENT, pady=8, padx=14, **kw)
+        super().__init__(parent, bg=BG3, **kw)
         self._on_search = on_search
         self._on_clear  = on_clear
         self._build()
 
     def _build(self):
-        tk.Label(self, text="Buscar:", bg=ACCENT, fg=FG,
-                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 8))
+        inner = tk.Frame(self, bg=BG3, pady=12, padx=16)
+        inner.pack(fill="x")
+
+        tk.Label(inner, text="Buscar en el catálogo", bg=BG3, fg=FG_DIM,
+                 font=("Segoe UI", 8, "bold")).grid(
+            row=0, column=0, columnspan=8, sticky="w", pady=(0, 8))
 
         self.name_var   = tk.StringVar()
         self.artist_var = tk.StringVar()
         self.genre_var  = tk.StringVar()
 
+        col = 0
         for label, var in [("Nombre", self.name_var),
                             ("Artista", self.artist_var),
                             ("Género",  self.genre_var)]:
-            tk.Label(self, text=label, bg=ACCENT, fg=FG_DIM,
-                     font=("Segoe UI", 9)).pack(side="left", padx=(4, 2))
-            entry = make_entry(self, textvariable=var, width=14)
-            entry.pack(side="left", padx=(0, 6))
-            entry.bind("<Return>", lambda _: self._on_search(self.get_criteria()))
+            tk.Label(inner, text=label, bg=BG3, fg=FG_DIM,
+                     font=("Segoe UI", 9)).grid(row=1, column=col, sticky="w")
+            col += 1
+            wrap = make_bordered_entry(inner, textvariable=var, width=16)
+            wrap.grid(row=1, column=col, padx=(2, 16), sticky="ew")
+            wrap.entry.bind("<Return>", lambda _: self._on_search(self.get_criteria()))
+            col += 1
 
-        make_button(self, "🔍 Buscar",
+        make_button(inner, "🔍  Buscar",
                     lambda: self._on_search(self.get_criteria()),
-                    color=HIGHLIGHT, width=10).pack(side="left", padx=6)
-        make_button(self, "✕ Limpiar", self._clear,
-                    color=ACCENT, width=8).pack(side="left")
+                    color=HIGHLIGHT, hover=HIGHLIGHT2, width=11).grid(
+            row=1, column=col, padx=(0, 6))
+        col += 1
+        make_button(inner, "✕  Limpiar", self._clear,
+                    color=ACCENT, width=9).grid(row=1, column=col)
 
     def get_criteria(self) -> dict:
-        """Retorna los criterios no vacíos como dict."""
         criteria = {}
         if self.name_var.get().strip():
             criteria["name"] = self.name_var.get().strip()

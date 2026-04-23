@@ -5,7 +5,7 @@ Diálogos modales de la aplicación.
 import tkinter as tk
 from tkinter import messagebox, filedialog
 
-from ui.styles import BG, ACCENT, HIGHLIGHT, FG, FG_DIM, make_button, make_entry
+from ui.styles import BG, BG3, ACCENT, HIGHLIGHT, FG, FG_DIM, DIVIDER, make_button, make_bordered_entry
 
 
 class AddSongDialog(tk.Toplevel):
@@ -25,7 +25,7 @@ class AddSongDialog(tk.Toplevel):
         super().__init__(parent)
         self.result = None
         self.title("Agregar canción")
-        self.configure(bg=BG)
+        self.configure(bg=BG3)
         self.resizable(False, False)
         self.grab_set()
 
@@ -34,32 +34,39 @@ class AddSongDialog(tk.Toplevel):
         self._center(parent)
 
     def _build(self):
-        frame = tk.Frame(self, bg=BG, padx=24, pady=20)
+        frame = tk.Frame(self, bg=BG3, padx=28, pady=24)
         frame.pack(fill="both", expand=True)
 
-        tk.Label(frame, text="Nueva canción", bg=BG, fg=HIGHLIGHT,
+        tk.Label(frame, text="Nueva canción", bg=BG3, fg=HIGHLIGHT,
                  font=("Segoe UI", 13, "bold")).grid(
-            row=0, column=0, columnspan=3, sticky="w", pady=(0, 14))
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        tk.Label(frame, text="Los campos marcados con * son obligatorios.",
+                 bg=BG3, fg=FG_DIM, font=("Segoe UI", 8)).grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(0, 14))
 
-        for i, (label, key, has_browse) in enumerate(self._FIELDS, start=1):
-            tk.Label(frame, text=label, bg=BG, fg=FG_DIM,
-                     font=("Segoe UI", 9)).grid(row=i, column=0, sticky="w", pady=4)
+        for i, (label, key, has_browse) in enumerate(self._FIELDS, start=2):
+            tk.Label(frame, text=label, bg=BG3, fg=FG_DIM,
+                     font=("Segoe UI", 9)).grid(row=i, column=0, sticky="w", pady=5)
 
             var = tk.StringVar()
             self._vars[key] = var
-            make_entry(frame, textvariable=var, width=28).grid(
-                row=i, column=1, padx=(8, 4), pady=4)
+            wrap = make_bordered_entry(frame, textvariable=var, width=28)
+            wrap.grid(row=i, column=1, padx=(10, 4), pady=5, sticky="ew")
 
             if has_browse:
                 make_button(frame, "Examinar",
                             lambda k=key: self._browse(k),
-                            color=ACCENT, width=9).grid(row=i, column=2)
+                            color=ACCENT, width=9).grid(row=i, column=2, padx=(2, 0))
 
-        btn_frame = tk.Frame(frame, bg=BG)
-        btn_frame.grid(row=len(self._FIELDS) + 2, column=0,
-                       columnspan=3, pady=(16, 0), sticky="e")
+        tk.Frame(frame, bg=DIVIDER, height=1).grid(
+            row=len(self._FIELDS) + 3, column=0, columnspan=3,
+            sticky="ew", pady=(16, 12))
+
+        btn_frame = tk.Frame(frame, bg=BG3)
+        btn_frame.grid(row=len(self._FIELDS) + 4, column=0,
+                       columnspan=3, sticky="e")
         make_button(btn_frame, "Cancelar", self.destroy,
-                    color=ACCENT, width=10).pack(side="right", padx=(6, 0))
+                    color=ACCENT, width=10).pack(side="right", padx=(8, 0))
         make_button(btn_frame, "Agregar", self._submit,
                     color=HIGHLIGHT, width=10).pack(side="right")
 
