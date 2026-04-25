@@ -1,6 +1,6 @@
 """
 SpotiCry - Cliente con Streaming de Audio (VERSIÓN FINAL)
-Descarga incremental y reproduce sin errores de permisos.
+Descarga completa, reproducción secuencial, barra de progreso y seeking.
 """
 
 import socket
@@ -27,17 +27,19 @@ class SpotiCryStreamingClient:
         self.is_downloading = False
         self.is_playing = False
         self.is_paused = False
-        self.started_playback = False
+        self.seek_requested = None  # (position_seconds)
         
         self.temp_path = None
         
-        # Inicializar pygame
+        # Callback para actualizar GUI
+        self.on_status = None
+        self.on_progress = None  # (current_seconds, total_seconds)
+        
         pygame.init()
-        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=8192)
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
         print("🎵 Pygame inicializado")
     
     def connect(self):
-        """Conecta al servidor."""
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
@@ -49,7 +51,6 @@ class SpotiCryStreamingClient:
             return False
     
     def disconnect(self):
-        """Desconecta del servidor."""
         self.stop()
         if self.socket:
             self.socket.close()
@@ -58,20 +59,14 @@ class SpotiCryStreamingClient:
         print("👋 Desconectado")
     
     def send_command(self, cmd, payload=None):
-        """Envía un comando JSON y retorna la respuesta."""
         if not self.connected:
-            print("❌ No hay conexión")
             return None
-        
         if payload is None:
             payload = {}
-        
         message = {"cmd": cmd, "payload": payload}
-        
         try:
             json_str = json.dumps(message) + "\n"
             self.socket.send(json_str.encode('utf-8'))
-            
             response_data = b""
             while True:
                 chunk = self.socket.recv(65536)
@@ -80,42 +75,37 @@ class SpotiCryStreamingClient:
                 response_data += chunk
                 if b'\n' in chunk:
                     break
-            
             lines = response_data.decode('utf-8').strip().split('\n')
             if lines:
                 return json.loads(lines[0])
             return None
-            
         except Exception as e:
-            print(f"❌ Error en comunicación: {e}")
+            print(f"❌ Error: {e}")
             return None
     
     def list_songs(self):
-        """Lista todas las canciones."""
         return self.send_command("LIST_SONGS")
     
     def play_song(self, song_id):
-        """Descarga y reproduce una canción."""
+        """Descarga y reproduce una canción. Retorna True si inicia correctamente."""
         self.stop()
-        
         self.current_song_id = song_id
         
         response = self.send_command("PLAY", {"song_id": song_id})
         
         if not response or response.get("status") != "ok":
-            print(f"❌ Error al reproducir: {response}")
+            print(f"❌ Error: {response}")
             return False
         
         data = response.get("data", {})
         self.current_song_info = data.get("song", {})
         self.file_size = data.get("file_size", 0)
         
-        # Crear archivo temporal
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
-        self.temp_path = temp_file.name
-        temp_file.close()
+        # Crear archivo en carpeta cache fija (mejor para seeking)
+        cache_dir = os.path.join(os.path.dirname(__file__), "_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        self.temp_path = os.path.join(cache_dir, f"song_{song_id}.mp3")
         
-        # Guardar primer chunk
         chunk_b64 = data.get("chunk", "")
         if chunk_b64:
             chunk_bytes = base64.b64decode(chunk_b64)
@@ -123,20 +113,23 @@ class SpotiCryStreamingClient:
                 f.write(chunk_bytes)
             self.downloaded_bytes = len(chunk_bytes)
         
-        print(f"📥 Descargando: {self.current_song_info.get('name', 'Desconocida')}")
-        print(f"   Tamaño total: {self.file_size} bytes")
+        song_name = self.current_song_info.get('name', 'Desconocida')
+        duration = self.current_song_info.get('duration_secs', 0)
+        
+        if self.on_status:
+            self.on_status(f"Descargando: {song_name}")
         
         self.is_downloading = True
         self.is_playing = True
-        self.started_playback = False
+        self.seek_requested = None
         
-        # Iniciar hilo de descarga
-        threading.Thread(target=self._download_loop, daemon=True).start()
+        # Descargar en hilo
+        threading.Thread(target=self._download_full, daemon=True).start()
         
         return True
     
-    def _download_loop(self):
-        """Descarga chunks incrementalmente."""
+    def _download_full(self):
+        """Descarga la canción completa."""
         while self.is_downloading and self.downloaded_bytes < self.file_size:
             response = self.send_command("SEEK", {
                 "song_id": self.current_song_id,
@@ -148,87 +141,94 @@ class SpotiCryStreamingClient:
                 chunk_b64 = data.get("chunk", "")
                 if chunk_b64:
                     chunk_bytes = base64.b64decode(chunk_b64)
-                    
-                    # Escribir al archivo (abrir y cerrar para no bloquear)
                     try:
                         with open(self.temp_path, 'ab') as f:
                             f.write(chunk_bytes)
                     except:
                         pass
-                    
                     self.downloaded_bytes += len(chunk_bytes)
                     
-                    # Mostrar progreso
-                    if self.file_size > 0:
+                    if self.on_progress and self.file_size > 0:
                         percent = (self.downloaded_bytes * 100) // self.file_size
-                        print(f"   📥 Descargado: {percent}%", end='\r')
-                    
-                    # Iniciar reproducción cuando tengamos ~15% descargado
-                    if not self.started_playback and self.downloaded_bytes > self.file_size * 0.15:
-                        self.started_playback = True
-                        threading.Thread(target=self._start_playback, daemon=True).start()
+                        self.on_progress(percent, 100)
             else:
                 time.sleep(0.1)
         
         if self.downloaded_bytes >= self.file_size:
-            print(f"\n   ✅ Descarga completa: {self.downloaded_bytes} bytes")
-            
-            # Si aún no empezó la reproducción, iniciarla ahora
-            if not self.started_playback:
-                self.started_playback = True
-                threading.Thread(target=self._start_playback, daemon=True).start()
+            print("DEBUG: Descarga completa, iniciando playback")
+            self.is_downloading = False
+            self._start_playback()
+            return
         
         self.is_downloading = False
-    
-    def _start_playback(self):
-        """Inicia la reproducción del archivo descargado."""
-        # Esperar un poco para que el archivo tenga datos suficientes
-        time.sleep(1)
         
-        if not self.is_playing:
+    def _start_playback(self):
+        """Inicia reproducción con monitoreo de progreso."""
+        if not self.is_playing or not self.temp_path:
             return
         
         try:
-            print(f"\n   ▶️ Iniciando reproducción...")
+            time.sleep(0.2)
             pygame.mixer.music.load(self.temp_path)
             pygame.mixer.music.play()
             
-            # Monitorear fin de reproducción
+            song_name = self.current_song_info.get('name', '')
+            duration = self.current_song_info.get('duration_secs', 0)
+            
+            if self.on_status:
+                self.on_status(f"Reproduciendo: {song_name}")
+            
+            # Monitorear reproducción
+            self._start_time = time.time()
+            self._seek_offset = 0.0
+            
             while self.is_playing:
-                if not pygame.mixer.music.get_busy() and not self.is_paused:
-                    # Si terminó y ya descargó todo
-                    if self.downloaded_bytes >= self.file_size and not self.is_downloading:
-                        print("\n🏁 Fin de la canción")
-                        self.is_playing = False
+                if self.is_paused:
+                    time.sleep(0.2)
+                    continue
+                
+               
+                # Reportar progreso
+                elapsed = time.time() - self._start_time
+                if self.on_progress and duration > 0:
+                    self.on_progress(int(elapsed), duration)
+                
+                # Verificar fin
+                if not pygame.mixer.music.get_busy():
+                    time.sleep(0.3)
+                    if not pygame.mixer.music.get_busy():
+                        if self.on_status:
+                            self.on_status(f"Terminó: {song_name}")
                         break
-                    else:
-                        # Esperar más datos
-                        time.sleep(0.5)
-                else:
-                    time.sleep(0.5)
-                    
+                
+                time.sleep(0.3)
+            
+            self.is_playing = False
+            
         except Exception as e:
-            print(f"\n❌ Error reproduciendo: {e}")
-            # Reintentar
-            time.sleep(1)
-            if self.is_playing:
-                try:
-                    pygame.mixer.music.load(self.temp_path)
-                    pygame.mixer.music.play()
-                except:
-                    pass
+            print(f"❌ Error reproduciendo: {e}")
+            self.is_playing = False
+    
+    def _get_current_position(self):
+        """Retorna la posición actual en segundos."""
+        if self.is_paused:
+            return self._seek_offset
+        if hasattr(self, '_start_time'):
+            return time.time() - self._start_time
+        return 0
     
     def stop(self):
-        """Detiene la reproducción y descarga."""
+        """Detiene reproducción y libera recursos."""
+        self._start_time = 0
+        self._seek_offset = 0.0
         self.is_playing = False
         self.is_downloading = False
-        self.started_playback = False
+        self.seek_requested = None
         
         pygame.mixer.music.stop()
         pygame.mixer.music.unload()
         
-        # Pequeña pausa para que pygame libere el archivo
-        time.sleep(0.5)
+        time.sleep(0.3)
         
         if self.temp_path and os.path.exists(self.temp_path):
             try:
@@ -239,89 +239,48 @@ class SpotiCryStreamingClient:
         self.temp_path = None
         self.current_song_id = None
         self.downloaded_bytes = 0
-        print("⏹️ Reproducción detenida")
     
     def pause(self):
-        """Pausa/Reanuda la reproducción."""
         if not self.is_playing:
-            print("❌ No hay canción reproduciéndose")
             return
-        
         if self.is_paused:
             pygame.mixer.music.unpause()
+            self._start_time = time.time() - self._seek_offset
             self.is_paused = False
-            print("▶️ Reanudado")
         else:
             pygame.mixer.music.pause()
+            self._seek_offset = time.time() - self._start_time
             self.is_paused = True
-            print("⏸️ Pausado")
-
-
-def main():
-    client = SpotiCryStreamingClient()
     
-    if not client.connect():
-        return
+    def seek(self, seconds: float):
+        """Adelanta/retrocede a una posición en segundos."""
+        if not self.is_playing or self.is_downloading:
+            return
+        
+        pos = max(0, seconds)
+        duration = self.current_song_info.get('duration_secs', 0)
+        if duration > 0 and pos > duration:
+            pos = duration
+        
+        print(f"SEEK a {pos}s")
+        
+        try:
+            # Intentar set_pos primero (no reinicia)
+            pygame.mixer.music.set_pos(pos)
+            self._start_time = time.time() - pos
+            self._seek_offset = pos
+            print(f"SEEK exitoso a {pos}s")
+        except:
+            # Si falla, recargar desde esa posición
+            try:
+                pygame.mixer.music.stop()
+                pygame.mixer.music.play(start=pos)
+                self._start_time = time.time() - pos
+                self._seek_offset = pos
+                print(f"SEEK con play(start={pos})")
+            except Exception as e:
+                print(f"Error en seek: {e}")
     
-    print("\n" + "=" * 50)
-    print("🎵 SPOTICRY - CLIENTE STREAMING")
-    print("=" * 50)
-    print("  /list       - Listar canciones")
-    print("  /play <id>  - Reproducir")
-    print("  /pause      - Pausar/Reanudar")
-    print("  /stop       - Detener")
-    print("  /quit       - Salir")
-    print("-" * 50)
-    
-    try:
-        while True:
-            cmd = input("\n> ").strip()
-            
-            if not cmd:
-                continue
-            
-            parts = cmd.split(maxsplit=1)
-            action = parts[0].lower()
-            
-            if action == "/quit":
-                client.stop()
-                break
-            
-            elif action == "/list":
-                response = client.list_songs()
-                if response and response.get("status") == "ok":
-                    songs = response.get("data", [])
-                    if songs:
-                        print("\n📀 Canciones disponibles:")
-                        for song in songs:
-                            print(f"  [ID:{song['id']}] {song['name']} - {song['artist']}")
-                    else:
-                        print("📭 No hay canciones")
-            
-            elif action == "/play":
-                if len(parts) < 2:
-                    print("❌ Uso: /play <id>")
-                else:
-                    try:
-                        song_id = int(parts[1])
-                        client.play_song(song_id)
-                    except ValueError:
-                        print("❌ ID debe ser un número")
-            
-            elif action == "/pause":
-                client.pause()
-            
-            elif action == "/stop":
-                client.stop()
-            
-            else:
-                print(f"❌ Comando desconocido: {action}")
-                
-    except KeyboardInterrupt:
-        print("\n\n⚠️ Interrupción por usuario")
-    finally:
-        client.disconnect()
-
-
-if __name__ == "__main__":
-    main()
+    def get_duration(self):
+        """Retorna la duración total en segundos."""
+        return self.current_song_info.get('duration_secs', 0)
