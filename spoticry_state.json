@@ -2,24 +2,211 @@
   "songs": [
     {
       "id": 1,
-      "name": "El_Lokeron",
-      "artist": "Desconocido",
-      "album": "Desconocido",
-      "genre": "Desconocido",
-      "file_path": "music/El_Lokeron.mp3",
-      "duration_secs": 0
+      "name": "Back In Black",
+      "artist": "ACDC",
+      "album": "Back in Black",
+      "genre": "Rock",
+      "file_path": "music\\ACDC - Back In Black (Official Video).mp3",
+      "duration_secs": 255
     },
     {
       "id": 2,
+      "name": "Moscow Mule",
+      "artist": "Bad Bunny",
+      "album": "Un Verano Sin Ti",
+      "genre": "Reggaeton",
+      "file_path": "music\\Bad Bunny - Moscow Mule (Video Oficial)  Un Verano Sin Ti.mp3",
+      "duration_secs": 242
+    },
+    {
+      "id": 3,
+      "name": "Yo Perreo Sola",
+      "artist": "Bad Bunny",
+      "album": "YHLQMDLG",
+      "genre": "Reggaeton",
+      "file_path": "music\\BAD BUNNY - YO PERREO SOLA  YHLQMDLG (Video Oficial).mp3",
+      "duration_secs": 173
+    },
+    {
+      "id": 4,
+      "name": "Mi Último Deseo",
+      "artist": "Banda Los Recoditos",
+      "album": "Single",
+      "genre": "Regional Mexicano",
+      "file_path": "music\\Banda Los Recoditos - Mi Último Deseo (Video Oficial).mp3",
+      "duration_secs": 180
+    },
+    {
+      "id": 5,
+      "name": "Shape of You",
+      "artist": "Ed Sheeran",
+      "album": "Divide",
+      "genre": "Pop",
+      "file_path": "music\\Ed Sheeran - Shape of You (Official Music Video).mp3",
+      "duration_secs": 234
+    },
+    {
+      "id": 6,
+      "name": "El Lokeron",
+      "artist": "Tito Double P",
+      "album": "Single",
+      "genre": "Regional Mexicano",
+      "file_path": "music\\El_Lokeron.mp3",
+      "duration_secs": 210
+    },
+    {
+      "id": 7,
+      "name": "Ferxxo 100",
+      "artist": "Feid",
+      "album": "Feliz Cumpleaños Ferxxo",
+      "genre": "Reggaeton",
+      "file_path": "music\\Feid - Ferxxo 100 (Official Video).mp3",
+      "duration_secs": 187
+    },
+    {
+      "id": 8,
+      "name": "Niña Bonita",
+      "artist": "Feid & Sean Paul",
+      "album": "Single",
+      "genre": "Reggaeton",
+      "file_path": "music\\Feid, Sean Paul - Niña Bonita (Official Video).mp3",
+      "duration_secs": 198
+    },
+    {
+      "id": 9,
+      "name": "UN X100TO",
+      "artist": "Grupo Frontera x Bad Bunny",
+      "album": "Single",
+      "genre": "Regional Mexicano",
+      "file_path": "music\\Grupo Frontera x Bad Bunny - UN X100TO (Video Oficial).mp3",
+      "duration_secs": 205
+    },
+    {
+      "id": 10,
+      "name": "Sweet Child O' Mine",
+      "artist": "Guns N' Roses",
+      "album": "Appetite for Destruction",
+      "genre": "Rock",
+      "file_path": "music\\Guns N' Roses - Sweet Child O' Mine (Official Music Video).mp3",
+      "duration_secs": 356
+    },
+    {
+      "id": 11,
+      "name": "Here Comes The Hotstepper",
+      "artist": "Ini Kamoze",
+      "album": "Single",
+      "genre": "Dancehall",
+      "file_path": "music\\Ini Kamoze - Here Comes The Hotstepper (Remix) (Official Video).mp3",
+      "duration_secs": 240
+    },
+    {
+      "id": 12,
+      "name": "Last Friday Night",
+      "artist": "Katy Perry",
+      "album": "Teenage Dream",
+      "genre": "Pop",
+      "file_path": "music\\Katy Perry - Last Friday Night (T.G.I.F.) (Official Music Video).mp3",
+      "duration_secs": 230
+    },
+    {
+      "id": 13,
+      "name": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "album": "A Night at the Opera",
+      "genre": "Rock",
+      "file_path": "music\\Queen  Bohemian Rhapsody (Official Video Remastered).mp3",
+      "duration_secs": 354
+    },
+    {
+      "id": 14,
+      "name": "Desenfocao'",
+      "artist": "Rauw Alejandro",
+      "album": "Vice Versa",
+      "genre": "Reggaeton",
+      "file_path": "music\\Rauw Alejandro - Desenfocao' (Video Oficial).mp3",
+      "duration_secs": 197
+    },
+    {
+      "id": 15,
+      "name": "I'm Still In Love With You",
+      "artist": "Sean Paul",
+      "album": "Dutty Rock",
+      "genre": "Dancehall",
+      "file_path": "music\\Sean Paul - I'm Still In Love With You (Official Video).mp3",
+      "duration_secs": 212
+    },
+    {
+      "id": 16,
+      "name": "Blinding Lights",
+      "artist": "The Weeknd",
+      "album": "After Hours",
+      "genre": "Pop",
+      "file_path": "music\\The Weeknd - Blinding Lights (Official Audio).mp3",
+      "duration_secs": 200
+    },
+    {
+      "id": 17,
       "name": "Tipitapa",
-      "artist": "Desconocido",
-      "album": "Desconocido",
-      "genre": "Desconocido",
-      "file_path": "music/Tipitapa.mp3",
-      "duration_secs": 0
+      "artist": "Banda MS",
+      "album": "Single",
+      "genre": "Regional Mexicano",
+      "file_path": "music\\Tipitapa.mp3",
+      "duration_secs": 195
+    },
+    {
+      "id": 22,
+      "name": "Baile Inolvidable",
+      "artist": "Bad Bunny",
+      "album": "Debí Tirar Más Fotos",
+      "genre": "Salsa",
+      "file_path": "music\\BAILE INoLVIDABLE.mp3",
+      "duration_secs": 195
+    },
+    {
+      "id": 23,
+      "name": "Pedro Navaja",
+      "artist": "Ruben Blades",
+      "album": "Single",
+      "genre": "Salsa",
+      "file_path": "music\\Pedro Navaja.mp3",
+      "duration_secs": 195
+    },
+    {
+      "id": 24,
+      "name": "Vivir Mi Vida",
+      "artist": "Marc Antony",
+      "album": "Single",
+      "genre": "Salsa",
+      "file_path": "music\\Vivir mi vida.mp3",
+      "duration_secs": 195
     }
   ],
-  "playlists": [],
-  "next_song_id": 3,
-  "next_playlist_id": 1
+  "playlists": [
+    {
+      "id": 8,
+      "name": "1",
+      "song_ids": [
+        18,
+        3
+      ]
+    },
+    {
+      "id": 9,
+      "name": "2",
+      "song_ids": [
+        12,
+        14
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Playlist 1",
+      "song_ids": [
+        18,
+        6
+      ]
+    }
+  ],
+  "next_song_id": 25,
+  "next_playlist_id": 11
 }

@@ -211,6 +211,32 @@ pub fn cmd_get_playlist(state: &AppState, payload: &Value) -> Response {
     }))
 }
 
+/// Lista todas las playlists del servidor.
+pub fn cmd_list_playlists(state: &AppState) -> Response {
+    Response::ok(serde_json::to_value(&state.playlists).unwrap())
+}
+
+/// Elimina una playlist por ID.
+/// Payload: { playlist_id }
+pub fn cmd_delete_playlist(state: &mut AppState, payload: &Value) -> Response {
+    let playlist_id = match payload["playlist_id"].as_u64() {
+        Some(v) => v as u32,
+        None => return Response::error("Se requiere 'playlist_id'"),
+    };
+
+    let before = state.playlists.len();
+    state.playlists.retain(|p| p.id != playlist_id);
+
+    if state.playlists.len() < before {
+        println!("🗑️  Playlist eliminada id={}", playlist_id);
+        Response::ok_msg("Playlist eliminada correctamente")
+    } else {
+        Response::error("Playlist no encontrada")
+    }
+}
+
+
+
 // ─── STREAMING DE AUDIO ───────────────────────────────────────
 
 use crate::streaming;
@@ -371,6 +397,17 @@ pub fn route_command(state: &Arc<Mutex<AppState>>, command: Command) -> Response
         "STOP" => {
             let mut s = state.lock().unwrap();
             cmd_stop(&mut s, &command.payload)
+        }
+
+        "LIST_PLAYLISTS" => {
+            let s = state.lock().unwrap();
+            cmd_list_playlists(&s)
+        }
+        "DELETE_PLAYLIST" => {
+            let mut s = state.lock().unwrap();
+            let r = cmd_delete_playlist(&mut s, &command.payload);
+            if r.status == "ok" { persistence::save_state(&s); }
+            r
         }
 
         unknown => {

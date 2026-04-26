@@ -1,13 +1,16 @@
 """
-Ventana principal de SpotiCry.
-Orquesta la conexión, la tabla de canciones y la barra de búsqueda.
+Ventana principal de SpotiCry con pestañas Catálogo / Playlists.
 """
 
+from cliente_streaming import SpotiCryStreamingClient
 import sys
 import os
 import tkinter as tk
 from tkinter import messagebox
 import threading
+from tkinter import ttk
+import time
+import pygame
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from connection import ServerConnection
@@ -19,6 +22,7 @@ from ui.styles import (BG, BG2, BG3, ACCENT, HIGHLIGHT, HIGHLIGHT2,
 from ui.song_list  import SongList
 from ui.search_bar import SearchBar
 from ui.dialogs    import AddSongDialog
+from ui.tabs       import TabBar, PlaylistView
 
 HOST = "127.0.0.1"
 PORT = 7878
@@ -28,22 +32,29 @@ class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("SpotiCry")
-        self.geometry("920x600")
-        self.minsize(780, 480)
+        self.geometry("920x680")
+        self.minsize(780, 550)
         self.configure(bg=BG)
 
         self.conn = ServerConnection(HOST, PORT)
+        self.player = SpotiCryStreamingClient()
 
         self._build_topbar()
+        make_separator(self, color=DIVIDER).pack(fill="x")
+        self._build_tabs()
         make_separator(self, color=DIVIDER).pack(fill="x")
         self._build_search_bar()
         make_separator(self, color=DIVIDER).pack(fill="x")
         self._build_catalog_header()
         self._build_song_list()
+        self._build_playlist_view()
         make_separator(self, color=DIVIDER).pack(fill="x")
         self._build_action_bar()
         make_separator(self, color=DIVIDER).pack(fill="x")
         self._build_statusbar()
+
+        # Mostrar catálogo por defecto (AHORA ya existen todos los widgets)
+        self._show_view("catalog")
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(120, self._auto_connect)
@@ -53,16 +64,12 @@ class MainWindow(tk.Tk):
     def _build_topbar(self):
         bar = tk.Frame(self, bg=BG2, pady=12)
         bar.pack(fill="x", side="top")
-
-        # Logo
         logo_frame = tk.Frame(bar, bg=BG2)
         logo_frame.pack(side="left", padx=20)
         tk.Label(logo_frame, text="♫", bg=BG2, fg=HIGHLIGHT,
                  font=("Segoe UI", 18, "bold")).pack(side="left", padx=(0, 6))
         tk.Label(logo_frame, text="SpotiCry", bg=BG2, fg=FG,
                  font=("Segoe UI", 14, "bold")).pack(side="left")
-
-        # Indicador de conexión (derecha)
         self._conn_dot = tk.Label(bar, text="●", bg=BG2, fg=WARNING,
                                   font=("Segoe UI", 10))
         self._conn_dot.pack(side="right", padx=(0, 4))
@@ -70,42 +77,102 @@ class MainWindow(tk.Tk):
                                     font=("Segoe UI", 9))
         self._conn_label.pack(side="right", padx=(16, 0))
 
+    # ── Pestañas ─────────────────────────────────────────────────
+
+    def _build_tabs(self):
+        self._tab_bar = TabBar(self, on_change=self._on_tab_change)
+        self._tab_bar.pack(fill="x")
+        self._tab_bar.add_tab("catalog", "📀  Catálogo")
+        self._tab_bar.add_tab("playlists", "📋  Playlists")
+
+    def _on_tab_change(self, key: str):
+        self._show_view(key)
+
+    def _show_view(self, key: str):
+        if key == "catalog":
+            self._search_bar.pack(fill="x")
+            self._catalog_header.pack(fill="x")
+            self._song_list.pack(fill="both", expand=True)
+            self._playlist_view.pack_forget()
+            self._catalog_action_bar.pack(fill="x")
+            self._playlist_action_bar.pack_forget()
+        else:
+            self._search_bar.pack_forget()
+            self._catalog_header.pack_forget()
+            self._song_list.pack_forget()
+            self._catalog_action_bar.pack_forget()
+            self._playlist_view.pack(fill="both", expand=True)
+            self._playlist_action_bar.pack(fill="x")
+            self._playlist_view.load_playlists()
+
     # ── Búsqueda ──────────────────────────────────────────────────
 
     def _build_search_bar(self):
         self._search_bar = SearchBar(self, on_search=self._do_search,
                                      on_clear=self._load_songs)
-        self._search_bar.pack(fill="x")
 
     # ── Encabezado del catálogo ───────────────────────────────────
 
     def _build_catalog_header(self):
-        header = tk.Frame(self, bg=BG, pady=8, padx=16)
-        header.pack(fill="x")
-        tk.Label(header, text="CATÁLOGO DE MÚSICA", bg=BG, fg=FG_MUTED,
+        self._catalog_header = tk.Frame(self, bg=BG, pady=8, padx=16)
+        tk.Label(self._catalog_header, text="CATÁLOGO DE MÚSICA", bg=BG, fg=FG_MUTED,
                  font=("Segoe UI", 8, "bold")).pack(side="left")
         self._count_var = tk.StringVar(value="")
-        tk.Label(header, textvariable=self._count_var, bg=BG, fg=FG_MUTED,
+        tk.Label(self._catalog_header, textvariable=self._count_var, bg=BG, fg=FG_MUTED,
                  font=("Segoe UI", 8)).pack(side="right")
 
     # ── Tabla de canciones ────────────────────────────────────────
 
     def _build_song_list(self):
         self._song_list = SongList(self)
-        self._song_list.pack(fill="both", expand=True, padx=0, pady=0)
 
-    # ── Barra de acciones ─────────────────────────────────────────
+    # ── Vista de playlists ────────────────────────────────────────
+
+    def _build_playlist_view(self):
+        self._playlist_view = PlaylistView(
+            self, self.conn,
+            on_status=self._set_status,
+            on_play_playlist=self._play_playlist
+        )
+
+    # ── Barra de acciones (Catálogo) ──────────────────────────────
 
     def _build_action_bar(self):
-        bar = tk.Frame(self, bg=BG2, pady=10, padx=16)
-        bar.pack(fill="x")
+        # Barra para Catálogo
+        self._catalog_action_bar = tk.Frame(self, bg=BG2, pady=10, padx=16)
+
+        bar = self._catalog_action_bar
+
+        make_button(bar, "▶  Play", self._play_song,
+                    color=SUCCESS, hover=SUCCESS_H, width=10).pack(side="left", padx=(0, 4))
+        make_button(bar, "⏸  Pause", self._pause_song,
+                    color=WARNING, width=10).pack(side="left", padx=(0, 4))
+        make_button(bar, "⏹  Stop", self._stop_song,
+                    color=ERROR, hover=ERROR_H, width=10).pack(side="left", padx=(0, 4))
+        make_button(bar, "⏪ -5s", lambda: self._seek_relative(-5),
+                    color=ACCENT, width=7).pack(side="left", padx=(8, 2))
+        make_button(bar, "⏩ +5s", lambda: self._seek_relative(5),
+                    color=ACCENT, width=7).pack(side="left", padx=(0, 16))
+
+        make_separator(bar, color=DIVIDER).pack(side="left", fill="y", padx=8, pady=2)
 
         make_button(bar, "+ Agregar canción", self._add_song,
-                    color=SUCCESS, hover=SUCCESS_H, width=17).pack(side="left", padx=(0, 8))
+                    color=SUCCESS, hover=SUCCESS_H, width=17).pack(side="left", padx=(8, 8))
         make_button(bar, "🗑  Eliminar canción", self._delete_song,
                     color="#2a1a1a", hover=ERROR_H, width=17).pack(side="left")
         make_button(bar, "⟳  Actualizar", self._load_songs,
                     color=ACCENT, width=14).pack(side="right")
+
+        # Barra vacía para Playlists
+        self._playlist_action_bar = tk.Frame(self, bg=BG2, height=46)
+        
+    def _seek_relative(self, delta: int):
+        """Adelanta o retrocede N segundos."""
+        if self.player.is_playing:
+            current = self.player._get_current_position()
+            new_pos = max(0, current + delta)
+            self.player.seek(new_pos)
+            self._set_status(f"Posición: {int(new_pos)}s")
 
     # ── Statusbar ─────────────────────────────────────────────────
 
@@ -116,7 +183,7 @@ class MainWindow(tk.Tk):
         tk.Label(bar, textvariable=self._status_var, bg=BG2, fg=FG_MUTED,
                  font=("Segoe UI", 8), anchor="w").pack(side="left", padx=14)
 
-    # ── Conexión automática ───────────────────────────────────────
+    # ── Conexión ──────────────────────────────────────────────────
 
     def _auto_connect(self):
         self._set_status("Conectando al servidor…")
@@ -150,16 +217,12 @@ class MainWindow(tk.Tk):
 
         frame = tk.Frame(dialog, bg=BG2, padx=32, pady=28)
         frame.pack()
-
-        # Ícono de error
         tk.Label(frame, text="⚠", bg=BG2, fg=WARNING,
                  font=("Segoe UI", 28)).pack(pady=(0, 10))
         tk.Label(frame, text="No se pudo conectar al servidor",
                  bg=BG2, fg=FG, font=("Segoe UI", 12, "bold")).pack()
         tk.Label(frame, text=err, bg=BG2, fg=FG_DIM,
-                 font=("Segoe UI", 9), wraplength=300,
-                 justify="center").pack(pady=(6, 24))
-
+                 font=("Segoe UI", 9)).pack(pady=(6, 24))
         tk.Frame(frame, bg=DIVIDER, height=1).pack(fill="x", pady=(0, 16))
 
         btn_row = tk.Frame(frame, bg=BG2)
@@ -184,7 +247,7 @@ class MainWindow(tk.Tk):
         w, h = dialog.winfo_width(), dialog.winfo_height()
         dialog.geometry(f"+{px - w // 2}+{py - h // 2}")
 
-    # ── Carga y búsqueda ──────────────────────────────────────────
+    # ── Catálogo ──────────────────────────────────────────────────
 
     def _load_songs(self):
         if not self._require_connection():
@@ -217,7 +280,15 @@ class MainWindow(tk.Tk):
         songs = resp.get("data", []) if resp else []
         self.after(0, lambda: self._show_songs(songs, is_search=True))
 
-    # ── Agregar / Eliminar ────────────────────────────────────────
+    def _show_songs(self, songs: list, is_search: bool = False):
+        self._song_list.populate(songs)
+        total = len(songs)
+        plural = "es" if total != 1 else ""
+        self._count_var.set(f"{total} canción{plural}")
+        if is_search:
+            self._set_status(f"{total} resultado{'s' if total != 1 else ''}.")
+        else:
+            self._set_status(f"Catálogo cargado — {total} canción{plural}.")
 
     def _add_song(self):
         if not self._require_connection():
@@ -240,19 +311,18 @@ class MainWindow(tk.Tk):
             self.after(0, lambda: self._set_status(msg))
             self.after(0, self._load_songs)
         else:
-            msg = resp.get("message", "Error desconocido") if resp else "Sin respuesta"
-            self.after(0, lambda: messagebox.showerror("Error al agregar", msg))
+            msg = resp.get("message", "Error") if resp else "Sin respuesta"
+            self.after(0, lambda: messagebox.showerror("Error", msg))
 
     def _delete_song(self):
         if not self._require_connection():
             return
         values = self._song_list.selected_values()
         if not values:
-            messagebox.showinfo("Sin selección", "Selecciona una canción de la lista.")
+            messagebox.showinfo("Sin selección", "Selecciona una canción.")
             return
         song_id, song_name = int(values[0]), values[1]
-        if not messagebox.askyesno("Eliminar canción",
-                                   f'¿Eliminar "{song_name}"?\nEsta acción no se puede deshacer.'):
+        if not messagebox.askyesno("Eliminar", f'¿Eliminar "{song_name}"?'):
             return
         threading.Thread(target=self._delete_worker,
                          args=(song_id, song_name), daemon=True).start()
@@ -263,33 +333,98 @@ class MainWindow(tk.Tk):
             self.after(0, lambda: messagebox.showerror("Error", err))
             return
         if resp and resp.get("status") == "ok":
-            self.after(0, lambda: self._set_status(f'"{song_name}" eliminada del catálogo.'))
+            self.after(0, lambda: self._set_status(f'"{song_name}" eliminada.'))
             self.after(0, self._load_songs)
         else:
-            msg = resp.get("message", "Error desconocido") if resp else "Sin respuesta"
-            self.after(0, lambda: messagebox.showerror("No se pudo eliminar", msg))
+            msg = resp.get("message", "Error") if resp else "Sin respuesta"
+            self.after(0, lambda: messagebox.showerror("Error", msg))
+
+    # ── Reproducción ──────────────────────────────────────────────
+
+    def _play_song(self):
+        if not self._require_connection():
+            return
+        values = self._song_list.selected_values()
+        if not values:
+            messagebox.showinfo("Sin selección", "Selecciona una canción.")
+            return
+        song_id = int(values[0])
+        song_name = values[1]
+        if not self.player.connected:
+            self.player.connect()
+        self._set_status(f"Reproduciendo: {song_name}")
+        self.player.play_song(song_id)
+
+    def _pause_song(self):
+        if self.player.is_playing:
+            self.player.pause()
+
+    def _stop_song(self):
+        self.player.stop()
+        self._set_status("Reproducción detenida")
+
+    def _play_playlist(self, songs: list):
+        """Reproduce canciones en orden secuencial."""
+        if not songs:
+            messagebox.showinfo("Vacía", "La playlist no tiene canciones.")
+            return
+        if not self.player.connected:
+            self.player.connect()
+        
+        self.player.on_status = lambda msg: self.after(0, lambda: self._set_status(msg))
+        
+        threading.Thread(target=self._play_sequential, args=(songs,), daemon=True).start()
+    
+    def _play_sequential(self, songs: list):
+        """Reproduce canciones una por una."""
+        for song in songs:
+            song_id = song.get("id")
+            song_name = song.get("name", "?")
+            
+            # Reproducir
+            self.player.play_song(song_id)
+            
+            # Esperar a que termine la descarga
+            while self.player.is_downloading:
+                time.sleep(0.3)
+            
+            # Esperar a que termine la reproducción
+            while self.player.is_playing:
+                time.sleep(0.5)
+            
+            time.sleep(0.3)
+        
+        self.after(0, lambda: self._set_status("Playlist terminada."))
 
     # ── Helpers ───────────────────────────────────────────────────
-
-    def _show_songs(self, songs: list, is_search: bool = False):
-        self._song_list.populate(songs)
-        total = len(songs)
-        plural = "es" if total != 1 else ""
-        self._count_var.set(f"{total} canción{plural}")
-        if is_search:
-            self._set_status(f"{total} resultado{'s' if total != 1 else ''} para la búsqueda.")
-        else:
-            self._set_status(f"Catálogo cargado — {total} canción{plural}.")
 
     def _set_status(self, text: str):
         self._status_var.set(text)
 
     def _require_connection(self) -> bool:
         if not self.conn.connected:
-            messagebox.showinfo("Sin conexión", "El cliente no está conectado al servidor.")
+            messagebox.showinfo("Sin conexión", "No conectado al servidor.")
             return False
         return True
+    
+    def _seek_relative(self, delta: int):
+        """Adelanta o retrocede N segundos."""
+        print(f"DEBUG _seek_relative: delta={delta}")
+        print(f"DEBUG _seek_relative: is_playing={self.player.is_playing}")
+        print(f"DEBUG _seek_relative: is_downloading={self.player.is_downloading}")
+        
+        if self.player.is_playing and not self.player.is_downloading:
+            current = self.player._get_current_position()
+            print(f"DEBUG _seek_relative: current={current}")
+            new_pos = max(0, current + delta)
+            print(f"DEBUG _seek_relative: llamando player.seek({new_pos})")
+            self.player.seek(new_pos)
+            self._set_status(f"Posición: {int(new_pos)}s")
+        else:
+            print(f"DEBUG _seek_relative: NO se ejecutó seek (playing={self.player.is_playing}, downloading={self.player.is_downloading})")
 
     def _on_close(self):
+        self.player.stop()
+        self.player.disconnect()
         self.conn.disconnect()
         self.destroy()

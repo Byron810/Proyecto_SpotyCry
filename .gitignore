@@ -1,3 +1,7 @@
-/target
-.idea
-.claude
+﻿music/
+_cliente/_cache/
+target/
+*.tmp
+~$*
+__pycache__/
+*.pyc

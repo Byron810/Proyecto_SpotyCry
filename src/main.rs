@@ -8,7 +8,7 @@ mod playlist;
 mod protocol;
 mod streaming;
 
-use std::io::{BufRead, BufReader, Write};
+use     std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -143,6 +143,28 @@ fn admin_console(state: Arc<Mutex<AppState>>) {
                 }
             }
 
+            "remove" => {
+                if parts.len() < 2 {
+                    println!("❌ Uso: remove <id>");
+                    continue;
+                }
+                let id = match parts[1].parse::<u32>() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        println!("❌ ID inválido");
+                        continue;
+                    }
+                };
+                let payload = json!({ "id": id });
+                let cmd = Command { cmd: "DELETE_SONG".to_string(), payload };
+                let response = handlers::route_command(&state, cmd);
+                if response.status == "ok" {
+                    println!("✅ {}", response.message.unwrap_or_default());
+                } else {
+                    println!("❌ Error: {}", response.message.unwrap_or_default());
+                }
+            }
+
             "list" => {
                 let cmd = Command { cmd: "LIST_SONGS".to_string(), payload: json!({}) };
                 let response = handlers::route_command(&state, cmd);
@@ -167,16 +189,203 @@ fn admin_console(state: Arc<Mutex<AppState>>) {
     }
 }
 
+use std::fs;
+
+/// Carga metadatos desde catalogo.json y los aplica a las canciones en music/
+
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct CatalogEntry {
+    name: String,
+    artist: String,
+    album: String,
+    genre: String,
+    file_path: String,
+    duration_secs: u32,
+}
+fn load_music_with_metadata(state: &Arc<Mutex<AppState>>) {
+    let music_dir = Path::new("music");
+
+    // Crear carpeta si no existe
+    if !music_dir.exists() {
+        println!("📁 Carpeta music/ no encontrada, creando...");
+        fs::create_dir_all(music_dir).ok();
+        return;
+    }
+
+    // Cargar catalogo.json si existe
+    let catalog_entries: Vec<CatalogEntry> = {
+        let catalog_path = Path::new("catalogo.json");
+        if catalog_path.exists() {
+            match fs::read_to_string(catalog_path) {
+                Ok(json) => match serde_json::from_str::<Vec<CatalogEntry>>(&json) {
+                    Ok(entries) => entries,
+                    Err(e) => {
+                        eprintln!("⚠️  Error parseando catalogo.json: {}", e);
+                        Vec::new()
+                    }
+                },
+                Err(_) => Vec::new(),
+            }
+        } else {
+            println!("📁 catalogo.json no encontrado.");
+            Vec::new()
+        }
+    };
+
+    let mut songs_added = 0;
+    let mut metadata_updated = 0;
+
+    // Escanear archivos en music/
+    if let Ok(entries) = fs::read_dir(music_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            if !path.is_file() {
+                continue;
+            }
+
+            let ext = path.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+
+            if !matches!(ext.as_str(), "mp3" | "wav" | "flac" | "ogg") {
+                continue;
+            }
+
+            let file_name = path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            let file_path = path.to_string_lossy().to_string();
+
+            // Buscar metadatos en catalogo.json
+            let catalog_info = catalog_entries.iter().find(|c| {
+                let c_name = Path::new(&c.file_path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                c_name == file_name
+            });
+
+            // Verificar si ya existe en el catálogo
+            let already_exists = {
+                let guard = state.lock().unwrap();
+                guard.songs.iter().any(|s| {
+                    let s_name = Path::new(&s.file_path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    s_name == file_name
+                })
+            };
+
+            if already_exists {
+                // Actualizar metadatos si es necesario
+                if let Some(info) = catalog_info {
+                    if let Ok(mut guard) = state.lock() {
+                        if let Some(song) = guard.songs.iter_mut().find(|s| {
+                            let s_name = Path::new(&s.file_path)
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            s_name == file_name
+                        }) {
+                            if song.artist == "Por clasificar" || song.artist == "Desconocido" {
+                                song.name = info.name.clone();
+                                song.artist = info.artist.clone();
+                                song.album = info.album.clone();
+                                song.genre = info.genre.clone();
+                                song.duration_secs = info.duration_secs;
+                                metadata_updated += 1;
+                                println!("   📋 Actualizado: {} -> {}", file_name, info.artist);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Agregar nueva canción con metadatos si existen
+                let name = catalog_info.map_or_else(
+                    || path.file_stem().unwrap_or_default().to_string_lossy().to_string(),
+                    |c| c.name.clone()
+                );
+                let artist = catalog_info.map_or_else(
+                    || "Por clasificar".to_string(),
+                    |c| c.artist.clone()
+                );
+                let album = catalog_info.map_or_else(
+                    || "Por clasificar".to_string(),
+                    |c| c.album.clone()
+                );
+                let genre = catalog_info.map_or_else(
+                    || "Por clasificar".to_string(),
+                    |c| c.genre.clone()
+                );
+                let duration = catalog_info.map_or(0, |c| c.duration_secs);
+
+                let payload = serde_json::json!({
+                    "name": name,
+                    "artist": artist,
+                    "album": album,
+                    "genre": genre,
+                    "file_path": file_path,
+                    "duration_secs": duration
+                });
+
+                let cmd = Command {
+                    cmd: "ADD_SONG".to_string(),
+                    payload,
+                };
+
+                let response = handlers::route_command(&state, cmd);
+
+                if response.status == "ok" {
+                    songs_added += 1;
+                    println!("   ✅ Agregada: {} - {}", name, artist);
+                }
+            }
+        }
+    }
+
+    let guard = state.lock().unwrap();
+    let total = guard.songs.len();
+    drop(guard);
+
+    println!("📀 {} cancione(s) en catálogo ({} nuevas, {} actualizadas)",
+             total, songs_added, metadata_updated);
+
+    if songs_added > 0 || metadata_updated > 0 {
+        if let Ok(s) = state.lock() {
+            persistence::save_state(&s);
+        }
+    }
+}
+
 // ========== MAIN ==========
 fn main() {
     let address = "127.0.0.1:7878";
-    let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(persistence::load_state()));
-    let listener = TcpListener::bind(address).expect("❌ No se pudo iniciar el servidor");
 
+    // Cargar estado previo o iniciar vacío
+    let app_state = persistence::load_state();
+    let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(app_state));
+
+    let listener = TcpListener::bind(address).expect("❌ No se pudo iniciar el servidor");
     println!("🚀 Servidor SpotiCry escuchando en {}", address);
 
+    // Escanear carpeta music/ y agregar canciones nuevas
+    println!("🔍 Escaneando carpeta music/...");
+    load_music_with_metadata(&state);
+
     let admin_state = Arc::clone(&state);
-    thread::spawn(move || { admin_console(admin_state); });
+    thread::spawn(move || {
+        admin_console(admin_state);
+    });
 
     println!("📝 Esperando conexiones...\n");
 
@@ -184,9 +393,11 @@ fn main() {
         match stream {
             Ok(stream) => {
                 let state_clone = Arc::clone(&state);
-                thread::spawn(move || { handle_client(stream, state_clone); });
+                thread::spawn(move || {
+                    handle_client(stream, state_clone);
+                });
             }
-            Err(e) => println!("❌ Error: {}", e),
+            Err(e) => println!("❌ Error aceptando conexión: {}", e),
         }
     }
 }
